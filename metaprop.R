@@ -6,7 +6,7 @@ library(tidyverse)
 #library(swirl)
 library(WriteXLS)
 
-data= read_excel("dataset_relapse2.xlsx", na="99999")
+data= read_excel("C:/Users/kc19o338/Desktop/Analysis schizofrenia/dataset_relapse_2019_06_25.xlsx", na="99999")
 
 
 ####Placebo should be used as one node irrespective if oral or depot. Therefore we need to change "medication application" for placebo
@@ -57,10 +57,21 @@ dataset_dichotomous3=data.frame(
   Study_name=dataset_dichotomous2$Study_name,
   pooled_n=dataset_dichotomous2$pooled_n, 
   pooled_events=dataset_dichotomous2$pooled_events,
- Duration_Actual=dataset_dichotomous2$Duration_Actual,
+  Duration_Actual=dataset_dichotomous2$Duration_Actual,
   stringsAsFactors = FALSE)
 dataset_dichotomous3$Duration_Actual<-dataset_dichotomous3$Duration_Actual-12
+###pairwis constrast data
+#Pair = pairwise(treat = Drug_name, event = pooled_events, n =pooled_n,
+                  #data = dataset_dichotomous3, studlab = Final_ID_all, sm = "OR")
 
+
+###metaprop command
 m1<-metaprop(pooled_events,pooled_n,data=dataset_dichotomous3,sm="PLOGIT" )
-
+##logit (proportion of relapses per study)
+logitprop<-m1$TE
+###SE(logit proportion of relapses)
+logitSEprop<-m1$seTE
+##metaregression
+x<-metareg(m1)
+x
 

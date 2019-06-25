@@ -11,7 +11,7 @@
 #install.packages("readxl")
 #install.packages("WriteXLS")
 
-#library(metafor)
+library(metafor)
 library(meta)
 library(xlsx)
 library(readxl)
@@ -23,7 +23,8 @@ library(WriteXLS)
 
 rm(list = ls())
 
-data= read_excel("dataset_relapse2.xlsx", na="99999")
+
+data= read_excel("C:/Users/kc19o338/Desktop/Analysis schizofrenia/dataset_relapse_2019_06_25.xlsx", na="99999")
 
 ####Placebo should be used as one node irrespective if oral or depot. Therefore we need to change "medication application" for placebo
 #data<-mutate(data, Medicationapplication=ifelse(Drug_name=="Placebo", "oral or depot", Medicationapplication))

@@ -24,7 +24,7 @@ library(WriteXLS)
 rm(list = ls())
 
 
-data= read_excel("C:/Users/kc19o338/Desktop/Analysis schizofrenia/dataset_relapse_2019_06_25.xlsx", na="99999")
+data= read_excel("C:/Users/kc19o338/Desktop/Analysis schizofrenia/Datasets/dataset_relapse.xlsx", na="99999")
 
 ####Placebo should be used as one node irrespective if oral or depot. Therefore we need to change "medication application" for placebo
 #data<-mutate(data, Medicationapplication=ifelse(Drug_name=="Placebo", "oral or depot", Medicationapplication))
@@ -80,7 +80,7 @@ dataset_dichotomous3=data.frame(
 
 ## Bring longformat in pairwise
 
-TestPair <- pairwise(treat=Drug_name, event=pooled_events, n=pooled_n, data=dataset_dichotomous3, sm="OR", studlab=Final_ID_all, allstudies = TRUE)
+TestPair <- pairwise(treat=Drug_name, event=N_relapsed, n=N_randomized, data=data, sm="OR", studlab=Final_ID_all, allstudies = TRUE)
 
 
 ### Delete the study "Dencker 19.." because its comparison is disconnected to the network

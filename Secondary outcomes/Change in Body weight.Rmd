@@ -1,0 +1,273 @@
+---
+title: "Network Meta-analysis for the secondary outcome of side effects: Change in Body weight"
+subtitle: Prepared by Konstantina on 30 October, refers to the analysis in both frequentist and Bayesian setting
+output:
+  word_document:
+    fig_height: 7
+    fig_width: 10
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, include=FALSE}
+library(devtools)
+install_github("esm-ispm-unibe-ch/NMAJags")
+library(NMAJags)
+library(R2jags)
+library(netmeta)
+library(meta)
+library(metafor)
+library(readxl)
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+DATA1=read_excel("C:/Users/kc19o338/Desktop/Schizophrenia project/Documentation of Schizophrenia relapses/Analysis schizofrenia/Datasets/dataset_relapsefinal.xlsx", na="99999")
+DATA1<-DATA1[,-1]
+```
+#Delete studies
+
+I excluded all the studies that did not have the informations about Weight_participants, Weight_mean or Weight_sd
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+DATAw<-DATA1[!is.na(DATA1$Weight_participants),]
+DATAw<-DATAw[!is.na(DATAw$Weight_mean),]
+DATAw<-DATAw[!is.na(DATAw$Weight_sd),]
+```
+
+#Description of the network
+
+Below is a description for the network formed by studies examining the secondary outcome of side effects Change in Body Weight.
+
+Below are the total number of participants in each of the included drug
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#describe the data
+tapply(DATA$Weight_participants,DATA$Drug_name,sum,na.rm=T)
+
+```
+Number of drugs
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+length(unique(DATA$Drug_name))
+```
+Number of studies:
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+print(length(table(DATA$Study_name)))
+```
+
+Number of arms in our tudies
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+table(table(DATA$Final_ID_all))
+```
+
+The network consists of 31 two-arm studies and 1 three-arm study.
+
+The plot below shows the available data
+
+```{r, include=FALSE}
+#prepare the data
+DATApairs=pairwise(treat=Drug_name, mean=Weight_mean, sd=Weight_sd, n=Weight_participants, data=DATA, sm="MD", studlab=Final_ID_all, allstudies = TRUE)
+
+#run NMA and create an object called EFF for efficacy
+#run NMA and create an object called EFF for efficacy
+net1<-netmeta(TE, seTE, treat1, treat2, studlab, data = DATApairs, sm = "MD", comb.random=TRUE, comb.fixed=FALSE, prediction=TRUE, ref="Placebo oral or depot")
+#netconnection(treat1,treat2,studlab,data=DATApairs)
+```
+
+
+```{r, echo=FALSE}
+
+#network plot
+netgraph(net1, plastic=F, thickness="number.of.studies", multiarm = F, points=T, col=1)
+```
+
+#FREQUENTIST SETTING
+
+#Network meta-analysis 
+
+Below are the relative treatment effects from the NMA model. 
+The first graph presents the sorted MDs, whereas the second graph presents the MDs in the same order as in the Bayesian setting later 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+#forest plots
+forest(net1, ref="Placebo oral or depot", sortvar = -Pscore,xlab="MD")
+
+forest(net1, ref="Placebo oral or depot", xlab="MD")
+```
+
+
+The P-scores (equivalent to the SUCRAs) are shown below
+```{r, echo=FALSE}
+netrank(net1)
+```
+
+
+The heterogeneity standard deviation is estimated at
+```{r, echo=FALSE}
+cat(paste("tau=",round(net1$tau,3)))
+```
+
+and I-square (total) is 
+```{r, echo=FALSE}
+cat(paste("I2=",round(net1$I2,3)*100,"%"))
+```
+
+
+There is important evidence of inconsistency in the data. There are in total
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+split=netsplit(net1) 
+SIDEp=split$compare.random$p
+SIDEp=SIDEp[!is.na(SIDEp)]
+#proportion of inconsistent loops
+cat(length(SIDEp))
+```
+
+comparisons in the network, and there is inconsistency (according to SIDE p-value<0.10) in
+
+```{r, echo=F, message=FALSE, warning=FALSE}
+cat(length(SIDEp[SIDEp<=0.1]))
+```
+loops which gives a % of inconsistent loops equal to
+```{r, echo=F, message=FALSE, warning=FALSE}
+cat(paste(round((length(SIDEp[SIDEp<=0.1])/length(SIDEp))*100,1),"%"))
+```
+
+
+The p-value from the design-by-treatment test is
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+a=decomp.design(net1)
+print(round(a$Q.inc.random$pval,3))
+```
+The p-value is lower than 0.10 and the inconsistency of the comparisons are really high (57.1%). NMA is not recommended for this network.
+
+#BAYESIAN SETTING
+
+# Network meta-analysis
+
+The names of drugs are recoded properly for the analysis
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+NMAdataContinuous=make.jagsNMA.data(studyid=Final_ID_all,t=Drug_name,y=Weight_mean, sd=Weight_sd, n=Weight_participants,data=DATA,type="cont",reference = "Placebo oral or depot")
+
+```
+
+```{r, include=FALSE}
+modelNMAContinuousMD<-function () 
+{
+  for (i in 1:ns) {
+    w[i, 1] <- 0
+    delta[i, t[i, 1]] <- 0
+    u[i] ~ dnorm(0, 1e-04)
+    for (k in 1:na[i]) {
+      y[i, t[i, k]] ~ dnorm(phi[i, t[i, k]], prec[i, t[i, 
+                                                       k]])
+      phi[i, t[i, k]] <- (u[i] + delta[i, t[i, k]])
+    }
+    for (k in 2:na[i]) {
+      delta[i, t[i, k]] ~ dnorm(md[i, t[i, k]], taud[i, 
+                                                     t[i, k]])
+      md[i, t[i, k]] <- d[t[i, k]] - d[t[i, 1]] + sw[i, 
+                                                     k]
+      taud[i, t[i, k]] <- PREC * 2 * (k - 1)/k
+      w[i, k] <- (delta[i, t[i, k]] - d[t[i, k]] + d[t[i, 
+                                                       1]])
+      sw[i, k] <- sum(w[i, 1:(k - 1)])/(k - 1)
+    }
+  }
+  d[ref] <- 0
+  for (k in 1:(ref - 1)) {
+    d[k] ~ dnorm(0, 1e-04)
+  }
+  for (k in (ref + 1):nt) {
+    d[k] ~ dnorm(0, 1e-04)
+  }
+  tau ~ dunif(0, 5)
+  PREC <- 1/pow(tau, 2)
+  for (c in 1:(nt - 1)) {
+    for (k in (c + 1):nt) {
+      MD[c, k] <- d[c] - d[k]
+    }
+  }
+  for (c in 1:nt) {
+    MD.ref[c] <- d[c] - d[ref]
+  }
+  for (c in 1:(ref - 1)) {
+    X[c] <- d[c] - d[ref]
+    predMD.ref[c] ~ dnorm(X[c], PREC)
+  }
+  for (c in (ref + 1):nt) {
+    X[c] <- d[c] - d[ref]
+    predMD.ref[c] ~ dnorm(X[c], PREC)
+  }
+  for (c in 1:(nt - 1)) {
+    for (k in (c + 1):nt) {
+      predMD[c, k] ~ dnorm(MD[c, k], PREC)
+    }
+  }
+  order[1:nt] <- rank(d[1:nt])
+  for (k in 1:nt) {
+    most.effective[k] <- equals(order[k], 1)
+    for (j in 1:nt) {
+      effectiveness[k, j] <- equals(order[k], j)
+    }
+  }
+  for (k in 1:nt) {
+    for (j in 1:nt) {
+      cumeffectiveness[k, j] <- sum(effectiveness[k, 1:j])
+    }
+  }
+  for (k in 1:nt) {
+    SUCRA[k] <- sum(cumeffectiveness[k, 1:(nt - 1)])/(nt - 
+                                                        1)
+  }
+  for (i in 1:ns) {
+    for (k in 1:na[i]) {
+      Darm[i, k] <- (y[i, t[i, k]] - phi[i, t[i, k]]) * 
+        (y[i, t[i, k]] - phi[i, t[i, k]]) * prec[i, t[i, 
+                                                      k]]
+    }
+    D[i] <- sum(Darm[i, 1:na[i]])
+  }
+  D.bar <- sum(D[])
+}
+```
+The Network meta-analysis and its results
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+NMAinJAGSBinP <- jags.parallel(data = NMAdataContinuous, inits = NULL, 
+                               parameters.to.save = c("MD.ref","tau"), n.chains = 2, n.iter = 120000,
+                               n.burnin = 10000,DIC=F,n.thin=10,
+                               model.file = modelNMAContinuousMD)
+print(NMAinJAGSBinP)
+
+
+```
+
+
+```{r, include=FALSE}
+traceplot(NMAinJAGSBinP)
+```
+
+The prior of tau that was used is uniform distribution (0,5)
+
+
+#Comparison between frequentist MDs and Bayesian MDs 
+
+```{r, include=FALSE}
+MDFrequentist<-(net1$TE.random[,dimnames="Placebo oral or depot"])
+MDFrequentist<-as.data.frame(MDFrequentist)
+MDunadjustedBayesian<-NMAinJAGSBinP$BUGSoutput$mean$MD.ref
+MDunadjustedBayesian<-as.data.frame(MDunadjustedBayesian)
+MDcomparison<-cbind(MDFrequentist,MDunadjustedBayesian)
+colnames(MDcomparison)<-c("Frequentist", "Bayesian")
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+MDcomparison
+```

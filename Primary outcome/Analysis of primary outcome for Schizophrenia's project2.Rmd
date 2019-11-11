@@ -1,0 +1,290 @@
+---
+title: "Network Meta-analysis and meta-regression for the primary outcome"
+subtitle: Prepared by Konstantina on 25 August, refers to the analysis of the primary outcome in both frequentist and Bayesian setting
+output:
+  word_document:
+    fig_height: 7
+    fig_width: 10
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, include=FALSE}
+library(devtools)
+install_github("esm-ispm-unibe-ch/NMAJags")
+library(NMAJags)
+library(R2jags)
+library(netmeta)
+library(meta)
+library(metafor)
+library(readxl)
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+DATA= read_excel("C:/Users/kc19o338/Desktop/Schizophrenia project/Documentation of Schizophrenia relapses/Analysis schizofrenia/Datasets/dataset_relapse_final.xlsx", na="99999")
+```
+#Delete studies
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+excludeID <-c(985, 1226, 2997, 3131, 3305, 4114, 4362, 4398, 4410, 4412, 4447, 4519, 4584, 4650)
+cat("The following IDs are excluded because of missing number of relapses:",paste("ID=", excludeID))
+DATA=DATA[!DATA$Final_ID_all%in%excludeID,]
+
+```
+
+#Description of the network
+
+Below is a description for the network formed by studies examining the outcome Relapses of Schizophrenia
+
+Below are the total number of participants in each of the included drug
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#describe the data
+tapply(DATA$N_randomized,DATA$Drug_name,sum,na.rm=T)
+
+```
+
+Number of studies:
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+print(length(table(DATA$Study_name)))
+```
+
+The plot below shows the available data
+
+```{r, include=FALSE}
+#prepare the data
+DATApairs=pairwise(treat=Drug_name, event=N_relapsed, n=N_randomized, data=DATA, sm="OR", studlab=Final_ID_all, allstudies = TRUE)
+
+#run NMA and create an object called EFF for efficacy
+net1<-netmeta(TE, seTE, treat1, treat2, studlab, data = DATApairs, sm = "OR", comb.random=TRUE, comb.fixed=FALSE, prediction=TRUE, ref="Placebo oral or depot")
+```
+
+
+```{r, echo=FALSE}
+
+#network plot
+netgraph(net1, plastic=F, thickness="number.of.studies", multiarm = F, points=T, col=1)
+```
+
+#FREQUENTIST SETTING
+
+#Network meta-analysis 
+
+Below are the relative treatment effects from the NMA model. 
+The first graph present the sorted ORs, whereas the second graph presents the ORs in the same order as in the Bayesian setting later 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+#forest plots
+forest(net1, ref="Placebo oral or depot", sortvar = -Pscore,xlab="OR")
+
+forest(net1, ref="Placebo oral or depot", xlab="OR")
+```
+
+
+The P-scores (equivalent to the SUCRAs) are shown below
+```{r, echo=FALSE}
+netrank(net1)
+```
+
+
+The heterogeneity standard deviation is estimated at
+```{r, echo=FALSE}
+cat(paste("tau=",round(net1$tau,3)))
+```
+
+and I-square (total) is 
+```{r, echo=FALSE}
+cat(paste("I2=",round(net1$I2,3)*100,"%"))
+```
+
+
+There is no evidence of inconsistency in the data. There are in total
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+split=netsplit(net1) 
+SIDEp=split$compare.random$p
+SIDEp=SIDEp[!is.na(SIDEp)]
+#proportion of inconsistent loops
+cat(length(SIDEp))
+```
+
+comparisons in the network, and there is inconsistency (according to SIDE p-value<0.10) in
+
+```{r, echo=F, message=FALSE, warning=FALSE}
+cat(length(SIDEp[SIDEp<=0.1]))
+```
+loops which gives a % of inconsistent loops equal to
+```{r, echo=F, message=FALSE, warning=FALSE}
+cat(paste(round((length(SIDEp[SIDEp<=0.1])/length(SIDEp))*100,1),"%"))
+```
+We need to acknowledge though that the network is very very thin, most drugs are part of long loops or no loops at all. So, the power of the test is certainty very low. 
+
+
+The p-value from the design-by-treatment test is
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+a=decomp.design(net1)
+print(round(a$Q.inc.random$pval,3))
+```
+#BAYESIAN SETTING
+
+# Network meta-analyis
+
+The names of drugs are recoded properly for the analysis
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+NMAdataBinary=make.jagsNMA.data(studyid=Final_ID_all,t=Drug_name,r=N_relapsed,n=N_randomized,data=DATA,type="binary",reference = "Placebo oral or depot")
+
+```
+
+
+The Network meta-analysis and its results
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+NMAinJAGSBinP <- jags.parallel(data = NMAdataBinary, inits = NULL, 
+                               parameters.to.save = c("ORref","tau",'b'), n.chains = 2, n.iter = 120000,
+                               n.burnin = 10000,DIC=F,n.thin=10,
+                               model.file = modelNMABinary)
+print(NMAinJAGSBinP)
+
+
+```
+
+
+```{r, include=FALSE}
+traceplot(NMAinJAGSBinP)
+```
+
+#Network meta-regression of Duration of the study centralized in 26 weeks
+
+```{r, include=FALSE}
+
+#the model
+
+modelNMRBinary2=function(){
+  for(i in 1:ns) { 
+    w[i,1]<- 0
+    theta[i,t[i,1]]<- 0                                             
+    
+    ##binomial likelihood of number of events for each arm k of study i
+    
+    for (k in 1:na[i]) {r[i,t[i,k]] ~ dbin(p[i, t[i, k]],n[i,t[i,k]])}                                                   
+    ##parameterization of the 'true' effect of each comparison 
+    ##of arm k vs. baseline arm (1) of study i                
+    
+    logit(p[i,t[i,1]])<- u[i]
+    for (k in 2:na[i]) {
+      
+      logit(p[i,t[i,k]])<- u[i] + theta1[i,t[i,k]]
+      theta1[i, t[i, k]]<- theta[i,t[i,k]]+beta[t[i,1],t[i,k]]*variab[i]
+      
+      ##distribution of random effects
+      theta[i,t[i,k]] ~ dnorm(md[i,t[i,k]],precd[i,t[i,k]])
+      
+      ## accounting for correlation between effect sizes estimated in multi-arm trials
+      
+      md[i,t[i,k]]<- mean[i,k] + sw[i,k]                                   
+      w[i,k]<- (theta[i,t[i,k]]  - mean[i,k])          
+      sw[i,k]<- sum(w[i,1:(k-1)])/(k-1)
+      precd[i,t[i,k]]<- prec *2*(k-1)/k  
+      
+      ##consistency equations
+      mean[i,k] <-d[t[i,k]] - d[t[i,1]] 
+      
+    }}
+  
+  ##prior distribution for log-odds in baseline arm of study i
+  for (i in 1:ns) {u[i] ~ dnorm(0,.01)}
+  
+  ##prior distribution for heterogeneity
+  tau ~ dnorm(0,10)%_%T(0,)                                   
+  prec<- 1/pow(tau,2)
+  tau.sq<- pow(tau,2)
+  ##prior distribution for basic parameters
+  d[ref] <- 0
+  for(k in 1:(ref-1)) {d[k] ~ dnorm(0,.01)}
+  for(k in (ref+1):nt) {d[k] ~ dnorm(0,.01)}
+  
+  ##OR for each comparison 
+  for(i in 1:(nt-1)) {
+    for (j in (i+1):nt) {
+      OR[j,i]<- exp(d[j] - d[i])
+      LOR[j,i]<- d[j] - d[i]}
+    
+  }
+  
+  for(j in 1:(ref-1)){ORref[j]<- exp(d[j] - d[ref])}
+  for(j in (ref+1):nt) {ORref[j]<- exp(d[j] - d[ref])}
+  for(j in 1:(ref-1)){LORref[j]<- d[j] - d[ref]}
+  for(j in (ref+1):nt) {LORref[j]<- d[j] - d[ref]}
+  #Ranking of treatments#
+  #regression coefficients
+  for (i in 1:nt) {
+    for (j in 1:nt) {
+      beta[i, j] <- b[j] - b[i]
+    }
+  }
+  b[ref] <- 0
+  for (k in 1:(ref - 1)) {
+    b[k]<-B
+  }
+  for (k in (ref + 1):nt) {
+    b[k]<-B
+  }
+  B~dnorm(0,0.01)
+  #precB<-1/(tauB*tauB)
+  #tauB~ dnorm(0,10)%_%T(0,)
+}
+```
+
+The names of drugs are recoded properly for the analysis 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+NMRdataBinary=make.jagsNMA.data(studyid=Final_ID_all,t=Drug_name,r=N_relapsed,n=N_randomized,data=DATA,othervar = Duration - 26,type="binary",reference = "Placebo oral or depot")
+
+```
+
+
+The Network meta-regression, its results and the adjusted ORs for Duration 26 weeks (centralized)
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+NMRinJAGSBinP <- jags.parallel(data = NMRdataBinary, inits = NULL, 
+                               parameters.to.save = c("ORref","tau", 'B' ), n.chains = 2, n.iter = 120000,
+                               n.burnin = 10000,DIC=F,n.thin=1,
+                               model.file = modelNMRBinary2)
+print(NMRinJAGSBinP)
+
+```
+
+The decision as to whether the adjustment is needed or not is taken on the basis of the drop on heterogeneity (tau.unadjasted= 0.690 and tau.adjusted=0.638, almost no change) and the magnitude of B (that is almost 0). There is no evidence that the adjustment is needed.
+
+
+```{r, include=FALSE}
+traceplot(NMRinJAGSBinP)
+```
+
+#Comparison between frequentist ORs, Bayesian ORs and Bayesian adjusted for Duration - 26 weeks ORs
+
+```{r, include=FALSE}
+ORFrequentist<-exp(net1$TE.random[,dimnames="Placebo oral or depot"])
+ORFrequentist<-as.data.frame(ORFrequentist)
+ORFrequentist<-as.data.frame(ORFrequentist[-21,])
+ORunadjustedBayesian<-NMAinJAGSBinP$BUGSoutput$mean$ORref
+ORunadjustedBayesian<-as.data.frame(ORunadjustedBayesian)
+ORadjustedBayesian<-NMRinJAGSBinP$BUGSoutput$mean$ORref
+ORadjastedBayesian<-as.data.frame(ORadjustedBayesian)
+ORcomparison<-cbind(ORFrequentist,ORunadjustedBayesian,ORadjustedBayesian)
+colnames(ORcomparison)<-c("Frequentist", "unadj_Bayesian", "adj_Bayesian")
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ORcomparison
+```

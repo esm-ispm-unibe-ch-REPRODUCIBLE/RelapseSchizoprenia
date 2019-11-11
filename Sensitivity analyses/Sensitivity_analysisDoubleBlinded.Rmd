@@ -1,0 +1,193 @@
+---
+title: "Sensitivity analysis: Network Meta-analysis for the primary outcome excluding no Double-Blinded studies"
+subtitle: Prepared by Konstantina on 15 November, refers to the analysis in both frequentist and Bayesian setting
+output:
+  word_document:
+    fig_height: 7
+    fig_width: 10
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, include=FALSE}
+library(devtools)
+install_github("esm-ispm-unibe-ch/NMAJags")
+library(NMAJags)
+library(R2jags)
+library(netmeta)
+library(meta)
+library(metafor)
+library(readxl)
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+DATA1= read_excel("C:/Users/kc19o338/Desktop/Schizophrenia project/Documentation of Schizophrenia relapses/Analysis schizofrenia/Datasets/dataset_relapse_final.xlsx", na="99999")
+```
+#Delete studies
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+DATA<-DATA1[!is.na(DATA1$N_relapsed),]
+#excludeID <-c(985, 1226, 2997, 3131, 3305, 4114, 4362, 4398, 4410, 4412, 4447, 4519, 4584, 4650)
+DATA<-DATA[!is.na(DATA$DoubleBlind_YesNo),]
+DATA<-DATA[DATA$DoubleBlind_YesNo==1,]
+
+```
+
+#Description of the network
+
+Below is a description for the network formed by studies examining the outcome Relapses of Schizophrenia
+
+Below are the total number of participants in each of the included drug
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#describe the data
+tapply(DATA$N_randomized,DATA$Drug_name,sum,na.rm=T)
+
+```
+
+Number of drugs
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+length(unique(DATA$Drug_name))
+```
+Number of studies:
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+print(length(table(DATA$Study_name)))
+```
+Number of arms in our studies
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+table(table(DATA$Final_ID_all))
+```
+The network consists of 82 two-arm studies and 5 three-arm studies.
+
+
+The plot below shows the available data
+
+```{r, include=FALSE}
+#prepare the data
+DATApairs=pairwise(treat=Drug_name, event=N_relapsed, n=N_randomized, data=DATA, sm="OR", studlab=Final_ID_all, allstudies = TRUE)
+
+#run NMA and create an object called EFF for efficacy
+net1<-netmeta(TE, seTE, treat1, treat2, studlab, data = DATApairs, sm = "OR", comb.random=TRUE, comb.fixed=FALSE, prediction=TRUE, ref="Placebo oral or depot")
+
+```
+
+
+```{r, echo=FALSE}
+
+#network plot
+netgraph(net1, plastic=F, thickness="number.of.studies", multiarm = F, points=T, col=1)
+```
+
+#FREQUENTIST SETTING
+
+#Network meta-analysis 
+
+Below are the relative treatment effects from the NMA model. 
+The first graph present the sorted ORs, whereas the second graph presents the ORs in the same order as in the Bayesian setting later 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+#forest plots
+forest(net1, ref="Placebo oral or depot", sortvar = -Pscore,xlab="OR",xlim=c(0.001,5))
+
+forest(net1, ref="Placebo oral or depot", xlab="OR",xlim=c(0.001,5))
+```
+
+
+The P-scores (equivalent to the SUCRAs) are shown below
+```{r, echo=FALSE}
+netrank(net1)
+```
+
+
+The heterogeneity standard deviation is estimated at
+```{r, echo=FALSE}
+cat(paste("tau=",round(net1$tau,3)))
+```
+
+and I-square (total) is 
+```{r, echo=FALSE}
+cat(paste("I2=",round(net1$I2,3)*100,"%"))
+```
+
+
+There is no evidence of inconsistency in the data. There are in total
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+split=netsplit(net1) 
+SIDEp=split$compare.random$p
+SIDEp=SIDEp[!is.na(SIDEp)]
+#proportion of inconsistent loops
+cat(length(SIDEp))
+```
+
+comparisons in the network that can be detached, and there is inconsistency (according to SIDE p-value<0.10) in
+
+```{r, echo=F, message=FALSE, warning=FALSE}
+cat(length(SIDEp[SIDEp<=0.1]))
+```
+comparisons which gives a % of inconsistent comparisons equal to
+```{r, echo=F, message=FALSE, warning=FALSE}
+cat(paste(round((length(SIDEp[SIDEp<=0.1])/length(SIDEp))*100,1),"%"))
+```
+We need to acknowledge though that the network is very very thin, most drugs are part of long loops or no loops at all. So, the power of the test is certainty very low. 
+
+
+The p-value from the design-by-treatment test is
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+a=decomp.design(net1)
+print(round(a$Q.inc.random$pval,3))
+```
+#BAYESIAN SETTING
+
+# Network meta-analyis
+
+The names of drugs are recoded properly for the analysis
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+NMAdataBinary=make.jagsNMA.data(studyid=Final_ID_all,t=Drug_name,r=N_relapsed,n=N_randomized,data=DATA,type="binary",reference = "Placebo oral or depot")
+
+```
+NMAdataBinary=make.jagsNMA.data(studyid=Final_ID_all,t=Drug_name,r=N_UseAntiparkinsonDrugs,n=N_randomized,data=DATA,type="binary",reference = "Placebo oral or depot")
+
+The Network meta-analysis and its results
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+NMAinJAGSBinP <- jags.parallel(data = NMAdataBinary, inits = NULL, 
+                               parameters.to.save = c("ORref","tau",'b'), n.chains = 2, n.iter = 120000,
+                               n.burnin = 10000,DIC=F,n.thin=10,
+                               model.file = modelNMABinary)
+print(NMAinJAGSBinP)
+
+
+```
+
+
+```{r, include=FALSE}
+traceplot(NMAinJAGSBinP)
+```
+
+
+#Comparison between frequentist ORs and Bayesian ORs 
+
+```{r, include=FALSE}
+ORFrequentist<-exp(net1$TE.random[,dimnames="Placebo oral or depot"])
+ORFrequentist<-as.data.frame(ORFrequentist)
+ORFrequentist<-as.data.frame(ORFrequentist[-21,])
+ORBayesian<-NMAinJAGSBinP$BUGSoutput$mean$ORref
+ORBayesian<-as.data.frame(ORBayesian)
+
+ORcomparison<-cbind(ORFrequentist,ORBayesian)
+colnames(ORcomparison)<-c("Frequentist", "Bayesian")
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ORcomparison
+```
